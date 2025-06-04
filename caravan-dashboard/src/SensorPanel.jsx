@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
-import { pubsub } from "./utils/pubsub";
+import { getPubSubClient } from "./utils/pubsub";
+import { CONNECTION_STATE_CHANGE, ConnectionState } from "@aws-amplify/pubsub";
+import { Hub } from "aws-amplify/utils";
 
+const pubsub = await getPubSubClient();
 export default function SensorPanel() {
   return (
     <>
@@ -17,17 +20,28 @@ function Panel() {
     rear_right: "-",
   });
 
-  const shadow_doc = "$aws/things/caravan-thing/shadow/update/doc";
+  const shadow_doc = "$aws/things/caravan-thing/shadow/update/documents";
   const publish_update = "$aws/things/caravan-thing/shadow/update";
 
   useEffect(() => {
-    // Subscribe to the the shadow/update/doc topic. Returns Observable object.
-    const shadowObservable = pubsub.subscribe({ topics: [shadow_doc] });
+    const shadowObservable = pubsub.subscribe({
+      topics: [shadow_doc],
+    });
+
+    Hub.listen("pubsub", (data) => {
+      const { payload } = data;
+      if (payload.event === CONNECTION_STATE_CHANGE) {
+        const connectionState = payload.data.connectionState;
+        console.log(connectionState);
+      }
+    });
+
     // Assign callback to the Observable for incoming messages on topic.
     const handleObservable = shadowObservable.subscribe({
       // Get the next message from tilt/*
       next: (message) => {
         // messages json content
+        console.log("in next");
         const payload = message.value;
         // Get the reported part and update our local variables
         const reported = payload.state.reported;
@@ -46,12 +60,20 @@ function Panel() {
         }
         // Pass in the current recorded status to a new object then overwrite/assign with the fields from reported
         setStatus((previousStatus) => {
+          console.log("in set status");
           return Object.assign({}, previousStatus, sensors);
         });
+      },
+      error: (err) => {
+        console.log(err);
+      },
+      complete: (ack) => {
+        console.log(ack);
       },
     });
     // When component disappears, unsub from topic.
     return () => {
+      console.log("unsubbing");
       handleObservable.unsubscribe();
     };
   }, []);
